@@ -36,6 +36,26 @@ public class MainActivity extends Activity {
     private ImageView miniCover;
     private MediaPlayer player;
     private MediaSession mediaSession;
+    private final Handler playbackProgressHandler = new Handler(Looper.getMainLooper());
+    private final Runnable playbackProgressUpdater = new Runnable() {
+        @Override public void run() {
+            if (player == null || !playerPrepared || mediaSession == null) return;
+            try {
+                if (!player.isPlaying()) return;
+                long actions = PlaybackState.ACTION_PLAY | PlaybackState.ACTION_PAUSE
+                        | PlaybackState.ACTION_PLAY_PAUSE | PlaybackState.ACTION_SKIP_TO_NEXT
+                        | PlaybackState.ACTION_SKIP_TO_PREVIOUS | PlaybackState.ACTION_SEEK_TO;
+                mediaSession.setPlaybackState(new PlaybackState.Builder()
+                        .setActions(actions)
+                        .setState(PlaybackState.STATE_PLAYING, player.getCurrentPosition(), 1.0f,
+                                SystemClock.elapsedRealtime())
+                        .build());
+                playbackProgressHandler.postDelayed(this, 1000);
+            } catch (IllegalStateException ignored) {
+                // Player was stopped or replaced while this update was running.
+            }
+        }
+    };
     private NotificationManager notificationManager;
     private static final String CHANNEL_ID = "zg_memory_playback";
     private static final int NOTIFICATION_ID = 4107;
@@ -887,7 +907,17 @@ public class MainActivity extends Activity {
         if (artwork != null) { meta.putBitmap(MediaMetadata.METADATA_KEY_ART, artwork); meta.putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART, artwork); }
         mediaSession.setMetadata(meta.build());
         long actions = PlaybackState.ACTION_PLAY | PlaybackState.ACTION_PAUSE | PlaybackState.ACTION_PLAY_PAUSE | PlaybackState.ACTION_SKIP_TO_NEXT | PlaybackState.ACTION_SKIP_TO_PREVIOUS;
-        mediaSession.setPlaybackState(new PlaybackState.Builder().setActions(actions).setState(playing ? PlaybackState.STATE_PLAYING : PlaybackState.STATE_PAUSED, safePlayerPosition(), playing ? 1f : 0f).build());
+        mediaSession.setPlaybackState(new PlaybackState.Builder()
+                .setActions(actions | PlaybackState.ACTION_SEEK_TO)
+                .setState(playing ? PlaybackState.STATE_PLAYING : PlaybackState.STATE_PAUSED,
+                        safePlayerPosition(), playing ? 1.0f : 0.0f, SystemClock.elapsedRealtime())
+                .build());
+        if (playing) {
+            playbackProgressHandler.removeCallbacks(playbackProgressUpdater);
+            playbackProgressHandler.postDelayed(playbackProgressUpdater, 1000);
+        } else {
+            playbackProgressHandler.removeCallbacks(playbackProgressUpdater);
+        }
         showPlaybackNotification(playing, artwork);
     }
 
@@ -929,5 +959,5 @@ public class MainActivity extends Activity {
         else if ("play".equals(a)) { if (player != null && playerPrepared && !player.isPlaying()) togglePlayback(); else if (player == null && !songs.isEmpty()) playSong(songs.get(0)); }
     }
 
-    @Override protected void onDestroy(){if(player!=null){try{player.release();}catch(Exception ignored){}player=null;}if(mediaSession!=null){mediaSession.setActive(false);mediaSession.release();mediaSession=null;}if(notificationManager!=null)notificationManager.cancel(NOTIFICATION_ID);super.onDestroy();}
+    @Override protected void onDestroy(){playbackProgressHandler.removeCallbacks(playbackProgressUpdater);if(player!=null){try{player.release();}catch(Exception ignored){}player=null;}if(mediaSession!=null){mediaSession.setActive(false);mediaSession.release();mediaSession=null;}if(notificationManager!=null)notificationManager.cancel(NOTIFICATION_ID);super.onDestroy();}
 }
