@@ -346,6 +346,9 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams mp = new LinearLayout.LayoutParams(-1, -2);
         mp.setMargins(0, dp(8), 0, dp(8));
         mainColumn.addView(miniPlayer, mp);
+        // Rebuilds the library view when returning from full-screen playback.
+        // Restore the active song details instead of leaving the default prompt.
+        syncMiniPlayerState();
 
         LinearLayout bottomNav = row();
         bottomNav.setGravity(Gravity.CENTER);
@@ -364,6 +367,28 @@ public class MainActivity extends Activity {
     }
 
     private void buildLibraryChromeOnly() { renderVisibleSongs(); }
+
+    /** Restore mini-player content whenever buildLibrary() creates new views. */
+    private void syncMiniPlayerState() {
+        if (miniTitle == null || miniArtist == null || miniCover == null || miniPlay == null) return;
+        if (currentSong == null) {
+            miniTitle.setText("Choose a song");
+            miniArtist.setText("Zubeen Garg");
+            miniCover.setImageDrawable(defaultCover());
+            miniCover.setTag(null);
+            miniPlay.setText("▶");
+            return;
+        }
+        miniTitle.setText(currentSong.optString("title", "Untitled"));
+        String artist = currentSong.optString("artist", "Zubeen Garg");
+        if (artist == null || artist.trim().isEmpty() || "null".equalsIgnoreCase(artist)) artist = "Zubeen Garg";
+        miniArtist.setText(artist);
+        loadCoverInto(miniCover, currentSong);
+        boolean playing = false;
+        try { playing = player != null && playerPrepared && player.isPlaying(); }
+        catch (Exception ignored) { }
+        miniPlay.setText(playing ? "Ⅱ" : "▶");
+    }
 
     private String songKey(JSONObject s) { String id=s.optString("id",""); return !id.isEmpty() && !id.equals("null") ? id : s.optString("title","")+"|"+s.optString("album",""); }
     private void saveFavourites(){ getSharedPreferences(PREFS,0).edit().putStringSet("favourites",new HashSet<>(favourites)).apply(); }
