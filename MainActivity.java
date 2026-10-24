@@ -392,7 +392,33 @@ public class MainActivity extends Activity {
 
     private String songKey(JSONObject s) { String id=s.optString("id",""); return !id.isEmpty() && !id.equals("null") ? id : s.optString("title","")+"|"+s.optString("album",""); }
     private void saveFavourites(){ getSharedPreferences(PREFS,0).edit().putStringSet("favourites",new HashSet<>(favourites)).apply(); }
-    private void toggleFavourite(JSONObject s){String k=songKey(s); if(favourites.contains(k))favourites.remove(k);else favourites.add(k);saveFavourites();Toast.makeText(this,favourites.contains(k)?"Added to favourites":"Removed from favourites",Toast.LENGTH_SHORT).show();renderVisibleSongs();}
+    private void toggleFavourite(JSONObject s) {
+        String key = songKey(s);
+        boolean adding;
+        if (favourites.contains(key)) {
+            favourites.remove(key);
+            adding = false;
+        } else {
+            favourites.add(key);
+            adding = true;
+        }
+
+        // Save immediately on this phone, then sync the same change to Supabase
+        // when the user has an active authenticated session.
+        saveFavourites();
+        renderVisibleSongs();
+
+        if (!authToken.isEmpty() && !authUserId.isEmpty()) {
+            syncOneFavourite(key, adding);
+            Toast.makeText(this,
+                    adding ? "Added to favourites; syncing to account…" : "Removed from favourites; syncing…",
+                    Toast.LENGTH_SHORT).show();
+        } else {
+            Toast.makeText(this,
+                    adding ? "Added to favourites on this phone. Sign in to sync." : "Removed from favourites on this phone.",
+                    Toast.LENGTH_SHORT).show();
+        }
+    }
     private void savePlaylists(){try{JSONArray a=new JSONArray();for(String name:playlists){JSONObject o=new JSONObject();o.put("name",name);JSONArray ids=new JSONArray();for(String id:playlistSongs.getOrDefault(name,new HashSet<String>()))ids.put(id);o.put("songs",ids);a.put(o);}getSharedPreferences(PREFS,0).edit().putString("playlists_json",a.toString()).apply();}catch(Exception ignored){}}
     private void createPlaylist(){EditText input=new EditText(this);input.setHint("Playlist name");new AlertDialog.Builder(this).setTitle("Create playlist").setView(input).setPositiveButton("Create",(d,w)->{String name=input.getText().toString().trim();if(!name.isEmpty()&&!playlists.contains(name)){playlists.add(name);playlistSongs.put(name,new HashSet<String>());savePlaylists();renderVisibleSongs();}}).setNegativeButton("Cancel",null).show();}
     private void addCurrentToPlaylist(){addSongToPlaylist(currentSong);}
@@ -836,7 +862,13 @@ public class MainActivity extends Activity {
         final Handler handler=new Handler(Looper.getMainLooper());
         Runnable updater=new Runnable(){public void run(){
             if(!isFullScreen)return;
-            if(player!=null){try{if(player.getDuration()>0){seek.setMax(player.getDuration());seek.setProgress(player.getCurrentPosition());elapsed.setText(formatTime(player.getCurrentPosition()));duration.setText(formatTime(player.getDuration()));}}catch(Exception ignored){}}
+            // Keep both visible play/pause controls synchronized with the actual MediaPlayer state.
+            boolean playing = false;
+            try { playing = player != null && playerPrepared && player.isPlaying(); }
+            catch (IllegalStateException ignored) { }
+            play.setText(playing ? "Ⅱ" : "▶");
+            if (miniPlay != null) miniPlay.setText(playing ? "Ⅱ" : "▶");
+            if(player!=null){try{if(playerPrepared && player.getDuration()>0){seek.setMax(player.getDuration());seek.setProgress(player.getCurrentPosition());elapsed.setText(formatTime(player.getCurrentPosition()));duration.setText(formatTime(player.getDuration()));}}catch(Exception ignored){}}
             handler.postDelayed(this,500);
         }};
         handler.post(updater);
