@@ -892,6 +892,17 @@ public class MainActivity extends Activity {
             @Override public void onPause() { runOnUiThread(() -> { if (player != null && playerPrepared) { try { if (player.isPlaying()) player.pause(); if (miniPlay != null) miniPlay.setText("▶"); updateSessionAndNotification(false); } catch (Exception ignored) {} } }); }
             @Override public void onSkipToNext() { runOnUiThread(() -> playAt(Math.min(songs.size()-1, indexOfCurrent()+1))); }
             @Override public void onSkipToPrevious() { runOnUiThread(() -> playAt(Math.max(0, indexOfCurrent()-1))); }
+            @Override public void onSeekTo(long position) {
+                runOnUiThread(() -> {
+                    if (player != null && playerPrepared) {
+                        try {
+                            int target = (int)Math.max(0L, Math.min(position, (long)player.getDuration()));
+                            player.seekTo(target);
+                            updateSessionAndNotification(player.isPlaying());
+                        } catch (IllegalStateException ignored) {}
+                    }
+                });
+            }
         });
         mediaSession.setActive(true);
     }
@@ -901,7 +912,9 @@ public class MainActivity extends Activity {
         MediaMetadata.Builder meta = new MediaMetadata.Builder()
                 .putString(MediaMetadata.METADATA_KEY_TITLE, currentSong.optString("title", "ZG Memory"))
                 .putString(MediaMetadata.METADATA_KEY_ARTIST, currentSong.optString("artist", "Zubeen Garg"))
-                .putString(MediaMetadata.METADATA_KEY_ALBUM, currentSong.optString("album", "ZG Memory"));
+                .putString(MediaMetadata.METADATA_KEY_ALBUM, currentSong.optString("album", "ZG Memory"))
+                // Android SystemUI needs the total duration to draw the notification progress bar.
+                .putLong(MediaMetadata.METADATA_KEY_DURATION, safePlayerDuration());
         String url = coverUrl(currentSong);
         Bitmap artwork = url.isEmpty() ? null : coverCache.get(url);
         if (artwork != null) { meta.putBitmap(MediaMetadata.METADATA_KEY_ART, artwork); meta.putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART, artwork); }
@@ -921,7 +934,15 @@ public class MainActivity extends Activity {
         showPlaybackNotification(playing, artwork);
     }
 
-    private long safePlayerPosition() { try { return player != null && playerPrepared ? player.getCurrentPosition() : 0; } catch (Exception ignored) { return 0; } }
+    private long safePlayerPosition() {
+        try { return player != null && playerPrepared ? Math.max(0, player.getCurrentPosition()) : 0; }
+        catch (Exception ignored) { return 0; }
+    }
+
+    private long safePlayerDuration() {
+        try { return player != null && playerPrepared ? Math.max(0, player.getDuration()) : 0; }
+        catch (Exception ignored) { return 0; }
+    }
 
     private PendingIntent mediaAction(String action, int requestCode) {
         Intent i = new Intent(this, MainActivity.class);
